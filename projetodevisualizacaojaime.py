@@ -1,5 +1,16 @@
-# Visualização da Informação — PIB Per Capita América do Sul.
-# Fonte: Banco Mundial — https://data.worldbank.org/indicator/NY.GDP.PCAP.CD
+"""Visualização da Informação — PIB Per Capita América do Sul.
+
+This module generates three visualizations of GDP per capita trends
+across South American countries from 2014 to 2024.
+
+Data Source: Banco Mundial — https://data.worldbank.org/indicator/NY.GDP.PCAP.CD
+GeoJSON Source: https://github.com/datasets/geo-countries
+"""
+
+import os
+import sys
+import logging
+from pathlib import Path
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,128 +19,394 @@ import matplotlib.patches as mpatches
 import seaborn as sns
 import geopandas as gpd
 import requests
-import os
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-ANOS = list(range(2014, 2025))
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 
-dados_pib = {
-    "Brasil":    [12070, 8757, 8727, 9895, 9001, 8717, 7741, 7519, 10413, 10378, 10280],
-    "Chile":     [14629, 13572, 13576, 15073, 15923, 14898, 12975, 16265, 16104, 16490, 16710],
-    "Argentina": [12973, 13791, 12790, 14398, 11653,  9888,  8442, 10636, 13738, 13326, 13858],
-    "Colômbia":  [ 7903,  6098,  5806,  6378,  6651,  6432,  5333,  6104,  7040,  7060,  7914],
-    "Peru":      [ 6541,  6121,  6197,  6762,  7032,  7171,  6144,  6712,  7126,  7323,  8452],
-    "Uruguai":   [16810, 15623, 15565, 16681, 17274, 16190, 15437, 16652, 19799, 22168, 23907],
-}
+# Data and file paths
+DATA_FILE = "dados_pib.csv"
+OUTPUT_DIR = "output"
+GEOJSON_PATH = Path(OUTPUT_DIR) / "countries.geojson"
 
-pib_2024 = {
-    "URY": 23907, "CHL": 16710, "ARG": 13858, "BRA": 10280,
-    "GUY":  9548, "PER":  8452, "COL":  7914, "SUR":  7431,
-    "ECU":  6875, "PRY":  6416, "VEN":  4511, "BOL":  3939,
-}
+# Chart parameters
+CHART_DPI = 150
+CHART_FONT_SIZE = 11
 
-nomes_pt = {
-    "URY": "Uruguai",   "CHL": "Chile",     "ARG": "Argentina",
-    "BRA": "Brasil",    "GUY": "Guiana",    "PER": "Peru",
-    "COL": "Colômbia",  "SUR": "Suriname",  "ECU": "Equador",
-    "PRY": "Paraguai",  "VEN": "Venezuela", "BOL": "Bolívia",
-}
-
-paleta = sns.color_palette("tab10", 6)
-cores_paises = {pais: paleta[i] for i, pais in enumerate(dados_pib.keys())}
-
-cores_mapa = {
-    "BRA": "#1f77b4", "CHL": "#ff7f0e", "ARG": "#2ca02c",
-    "COL": "#d62728", "PER": "#9467bd", "URY": "#8c564b",
-    "GUY": "#aec7e8", "SUR": "#c5b0d5", "ECU": "#ffbb78",
-    "PRY": "#98df8a", "VEN": "#ff9896", "BOL": "#c49c94",
-}
-
-# PIB per capita ao longo do tempo 
-
-print("Gerando gráfico 1 — Linha...")
-
-fig, ax = plt.subplots(figsize=(10, 5))
-for pais, valores in dados_pib.items():
-    ax.plot(ANOS, valores, marker="o", markersize=4, linewidth=2,
-            label=pais, color=cores_paises[pais])
-
-ax.set_title("PIB per capita — América do Sul (2014–2024)", fontsize=13, pad=10)
-ax.set_xlabel("Ano")
-ax.set_ylabel("PIB per capita (US$ correntes)")
-ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"US$ {x:,.0f}"))
-ax.set_xticks(ANOS)
-ax.tick_params(axis="x", labelrotation=45)
-ax.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=9)
-ax.grid(axis="y", linestyle="--", alpha=0.4)
-sns.despine(ax=ax)
-plt.tight_layout()
-plt.savefig("grafico1_linha.png", dpi=150, bbox_inches="tight")
-plt.close()
-
-# Participação relativa em 2024
-
-print("Gerando gráfico 2 — Setores...")
-
-valores_2024 = {pais: valores[-1] for pais, valores in dados_pib.items()}
-
-fig, ax = plt.subplots(figsize=(7, 7))
-wedges, texts, autotexts = ax.pie(
-    valores_2024.values(),
-    labels=valores_2024.keys(),
-    autopct="%1.1f%%",
-    startangle=140,
-    pctdistance=0.80,
-    wedgeprops={"linewidth": 0.6, "edgecolor": "white"},
-    colors=paleta,
+# GeoJSON source
+GEOJSON_URL = (
+    "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
 )
-for at in autotexts:
-    at.set_fontsize(9)
-ax.set_title("Participação relativa no PIB per capita\nAmérica do Sul — 2024", fontsize=13, pad=14)
-plt.tight_layout()
-plt.savefig("grafico2_setores.png", dpi=150, bbox_inches="tight")
-plt.close()
 
-# Mapa da América do Sul por PIB em 2024
+# Country metadata: ISO3 code → (Portuguese name, Hex color)
+COUNTRY_METADATA = {
+    "URY": ("Uruguai", "#8c564b"),
+    "CHL": ("Chile", "#ff7f0e"),
+    "ARG": ("Argentina", "#2ca02c"),
+    "BRA": ("Brasil", "#1f77b4"),
+    "GUY": ("Guiana", "#aec7e8"),
+    "PER": ("Peru", "#9467bd"),
+    "COL": ("Colômbia", "#d62728"),
+    "SUR": ("Suriname", "#c5b0d5"),
+    "ECU": ("Equador", "#ffbb78"),
+    "PRY": ("Paraguai", "#98df8a"),
+    "VEN": ("Venezuela", "#ff9896"),
+    "BOL": ("Bolívia", "#c49c94"),
+}
 
-GEOJSON_PATH = "/tmp/countries.geojson"
-if not os.path.exists(GEOJSON_PATH):
-    print("  Baixando GeoJSON...")
-    r = requests.get(
-        "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson",
-        verify=False,
+# Countries to highlight in map legend (those with time-series data)
+COUNTRIES_WITH_TIMESERIES = ["BRA", "CHL", "ARG", "COL", "PER", "URY"]
+
+# ============================================================================
+# LOGGING SETUP
+# ============================================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s — %(levelname)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+
+def create_session_with_retries(max_retries=3, backoff_factor=0.5):
+    """Create a requests Session with automatic retry logic.
+
+    Args:
+        max_retries: Maximum number of retries for failed requests.
+        backoff_factor: Backoff factor for retries.
+
+    Returns:
+        requests.Session: Configured session with retry strategy.
+    """
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=max_retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
     )
-    with open(GEOJSON_PATH, "w") as f:
-        f.write(r.text)
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
-gdf = gpd.read_file(GEOJSON_PATH)
-gdf = gdf.rename(columns={"ISO3166-1-Alpha-3": "ISO3"})
-gdf = gdf[gdf["ISO3"].isin(list(pib_2024.keys()))].copy()
-gdf["PIB"] = gdf["ISO3"].map(pib_2024)
-gdf["Nome"] = gdf["ISO3"].map(nomes_pt)
-gdf["Cor"] = gdf["ISO3"].map(cores_mapa)
-gdf = gdf.to_crs("EPSG:3857")
 
-fig, ax = plt.subplots(figsize=(8, 10))
-for _, row in gdf.iterrows():
-    gpd.GeoDataFrame([row], crs=gdf.crs).plot(
-        ax=ax, color=row["Cor"], edgecolor="white", linewidth=0.8,
+def download_geojson(url, output_path):
+    """Download GeoJSON file with error handling.
+
+    Args:
+        url: URL to download from.
+        output_path: Path to save the file.
+
+    Raises:
+        Exception: If download fails after retries.
+    """
+    try:
+        logger.info(f"Downloading GeoJSON from {url}...")
+        session = create_session_with_retries()
+        response = session.get(url, timeout=10)
+        response.raise_for_status()
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            f.write(response.text)
+        logger.info(f"GeoJSON saved to {output_path}")
+    except requests.RequestException as e:
+        logger.error(f"Failed to download GeoJSON: {e}")
+        raise
+
+
+def load_data(csv_file):
+    """Load GDP data from CSV file.
+
+    Args:
+        csv_file: Path to CSV file with countries in rows and years in columns.
+
+    Returns:
+        pd.DataFrame: DataFrame with GDP data.
+
+    Raises:
+        FileNotFoundError: If CSV file does not exist.
+    """
+    if not os.path.exists(csv_file):
+        raise FileNotFoundError(f"Data file not found: {csv_file}")
+    logger.info(f"Loading data from {csv_file}...")
+    df = pd.read_csv(csv_file)
+    logger.info(f"Loaded data for {len(df)} countries")
+    return df
+
+
+def prepare_timeseries_data(df):
+    """Prepare time-series data for line chart.
+
+    Args:
+        df: DataFrame with countries in rows and years in columns.
+
+    Returns:
+        dict: Dictionary mapping country names to lists of GDP values.
+        list: Sorted year values.
+    """
+    years = sorted([int(col) for col in df.columns if col.isdigit()])
+    timeseries = {}
+    for _, row in df.iterrows():
+        pais = row["Pais"]
+        valores = [row[year] for year in years]
+        timeseries[pais] = valores
+    return timeseries, years
+
+
+def prepare_2024_data(df):
+    """Prepare 2024 GDP data.
+
+    Args:
+        df: DataFrame with country data (requires both country names and ISO3 codes).
+
+    Returns:
+        dict: Dictionary mapping country names to 2024 GDP values.
+    """
+    # Use the last year (2024) from the dataset
+    year_columns = [col for col in df.columns if col.isdigit()]
+    last_year_col = str(max(int(col) for col in year_columns))
+    return df.set_index("Pais")[last_year_col].to_dict()
+
+
+def get_country_color(country_name):
+    """Get color for a country by name or ISO3 code.
+
+    Args:
+        country_name: Country name in Portuguese or ISO3 code.
+
+    Returns:
+        str: Hex color code.
+    """
+    # Try to find by ISO3 code first
+    for iso3, (pt_name, color) in COUNTRY_METADATA.items():
+        if country_name == pt_name or country_name == iso3:
+            return color
+    # Default color if not found
+    return "#808080"
+
+
+# ============================================================================
+# CHART GENERATION FUNCTIONS
+# ============================================================================
+
+
+def generate_line_chart(timeseries_data, years, output_file):
+    """Generate line chart of GDP per capita over time.
+
+    Args:
+        timeseries_data: Dictionary mapping country names to GDP values.
+        years: List of year values.
+        output_file: Path to save the chart.
+    """
+    logger.info("Generating line chart...")
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    for pais, valores in timeseries_data.items():
+        color = get_country_color(pais)
+        ax.plot(
+            years,
+            valores,
+            marker="o",
+            markersize=5,
+            linewidth=2.5,
+            label=pais,
+            color=color,
+        )
+
+    ax.set_title(
+        "PIB per capita — América do Sul (2014–2024)",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
     )
-for _, row in gdf.iterrows():
-    c = row.geometry.centroid
-    ax.annotate(
-        f"{row['Nome']}\nUS$ {row['PIB']:,.0f}",
-        xy=(c.x, c.y), ha="center", va="center", fontsize=6, color="#111111",
+    ax.set_xlabel("Ano", fontsize=11)
+    ax.set_ylabel("PIB per capita (US$ correntes)", fontsize=11)
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(lambda x, _: f"US$ {x:,.0f}")
+    )
+    ax.set_xticks(years)
+    ax.tick_params(axis="x", labelrotation=45)
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=10)
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    sns.despine(ax=ax)
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=CHART_DPI, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Line chart saved to {output_file}")
+
+
+def generate_bar_chart(data_2024, output_file):
+    """Generate bar chart of GDP per capita in 2024.
+
+    Args:
+        data_2024: Dictionary mapping country names to 2024 GDP values.
+        output_file: Path to save the chart.
+    """
+    logger.info("Generating bar chart...")
+    # Sort countries by GDP value for better visualization
+    sorted_data = dict(sorted(data_2024.items(), key=lambda x: x[1], reverse=True))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    countries = list(sorted_data.keys())
+    values = list(sorted_data.values())
+    colors = [get_country_color(c) for c in countries]
+
+    bars = ax.bar(countries, values, color=colors, edgecolor="black", linewidth=0.8)
+
+    ax.set_title(
+        "PIB per capita por país — 2024",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.set_ylabel("PIB per capita (US$ correntes)", fontsize=11)
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(lambda x, _: f"US$ {x:,.0f}")
     )
 
-paises_pizza = ["URY", "CHL", "ARG", "BRA", "COL", "PER"]
-legendas = [
-    mpatches.Patch(color=cores_mapa[iso], label=nomes_pt[iso])
-    for iso in paises_pizza
-]
-ax.legend(handles=legendas, title="Países (mesmas cores\ndo gráfico de setores)",
-          loc="lower left", fontsize=8, title_fontsize=8)
-ax.set_title("PIB per capita — América do Sul (2024)", fontsize=14, pad=12)
-ax.axis("off")
-plt.tight_layout()
-plt.savefig("grafico3_coropleto.png", dpi=150, bbox_inches="tight")
-plt.close()
+    # Add value labels on top of bars
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"US$ {int(height):,}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
+    ax.tick_params(axis="x", labelrotation=45)
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    sns.despine(ax=ax)
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=CHART_DPI, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Bar chart saved to {output_file}")
+
+
+def generate_choropleth_map(output_file):
+    """Generate choropleth map of GDP per capita by country.
+
+    Args:
+        output_file: Path to save the map.
+
+    Raises:
+        Exception: If GeoJSON cannot be loaded.
+    """
+    logger.info("Generating choropleth map...")
+
+    # Ensure GeoJSON is available
+    if not GEOJSON_PATH.exists():
+        download_geojson(GEOJSON_URL, GEOJSON_PATH)
+
+    try:
+        gdf = gpd.read_file(GEOJSON_PATH)
+    except Exception as e:
+        logger.error(f"Failed to read GeoJSON: {e}")
+        raise
+
+    # Rename column and filter to South American countries
+    gdf = gdf.rename(columns={"ISO3166-1-Alpha-3": "ISO3"})
+    gdf = gdf[gdf["ISO3"].isin(list(COUNTRY_METADATA.keys()))].copy()
+
+    # Add GDP and metadata
+    gdf["Nome"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][0])
+    gdf["Cor"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][1])
+    gdf = gdf.to_crs("EPSG:3857")
+
+    fig, ax = plt.subplots(figsize=(10, 12))
+
+    # Plot each country
+    for _, row in gdf.iterrows():
+        gpd.GeoDataFrame([row], crs=gdf.crs).plot(
+            ax=ax, color=row["Cor"], edgecolor="white", linewidth=1
+        )
+
+    # Add country labels
+    for _, row in gdf.iterrows():
+        c = row.geometry.centroid
+        ax.annotate(
+            row["Nome"],
+            xy=(c.x, c.y),
+            ha="center",
+            va="center",
+            fontsize=8,
+            fontweight="bold",
+            color="#111111",
+        )
+
+    # Add legend for highlighted countries
+    legend_patches = [
+        mpatches.Patch(color=COUNTRY_METADATA[iso][1], label=COUNTRY_METADATA[iso][0])
+        for iso in COUNTRIES_WITH_TIMESERIES
+    ]
+    ax.legend(
+        handles=legend_patches,
+        title="Países com série histórica",
+        loc="lower left",
+        fontsize=9,
+        title_fontsize=10,
+    )
+
+    ax.set_title(
+        "PIB per capita — América do Sul (2024)",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.axis("off")
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=CHART_DPI, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Choropleth map saved to {output_file}")
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+
+def main():
+    """Main execution function."""
+    try:
+        # Create output directory
+        Path(OUTPUT_DIR).mkdir(exist_ok=True)
+
+        # Load data
+        df = load_data(DATA_FILE)
+
+        # Prepare data
+        timeseries_data, years = prepare_timeseries_data(df)
+        data_2024 = prepare_2024_data(df)
+
+        # Generate charts
+        generate_line_chart(timeseries_data, years, Path(OUTPUT_DIR) / "grafico1_linha.png")
+        generate_bar_chart(data_2024, Path(OUTPUT_DIR) / "grafico2_barras.png")
+        generate_choropleth_map(Path(OUTPUT_DIR) / "grafico3_coropleto.png")
+
+        logger.info("All charts generated successfully!")
+
+    except FileNotFoundError as e:
+        logger.error(f"File error: {e}")
+        sys.exit(1)
+    except requests.RequestException as e:
+        logger.error(f"Network error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
