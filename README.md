@@ -1,4 +1,4 @@
-# Data Visualization Project — GDP Per Capita South America
+# Data Visualization Project, GDP Per Capita South America
 
 My project generates three interactive visualizations of GDP per capita trends across South American countries from 2014 to 2024.
 
