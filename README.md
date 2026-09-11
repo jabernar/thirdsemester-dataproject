@@ -1,10 +1,10 @@
-# Visualização da Informação — PIB Per Capita América do Sul
+# Data Visualization Project — GDP Per Capita South America
 
-This project generates three interactive visualizations of GDP per capita trends across South American countries from 2014 to 2024.
+My project generates three interactive visualizations of GDP per capita trends across South American countries from 2014 to 2024.
 
 ## Overview
 
-The project visualizes World Bank data on GDP per capita for 12 South American countries using three complementary charts:
+Visualization of World Bank data on GDP per capita for the 12 South American countries, using three complementary charts:
 
 1. **Line Chart** (`grafico1_linha.png`): Historical trend analysis for 6 countries with complete time-series data (2014–2024)
 2. **Bar Chart** (`grafico2_barras.png`): Comparative view of 2024 GDP per capita values across all tracked countries
@@ -12,7 +12,7 @@ The project visualizes World Bank data on GDP per capita for 12 South American c
 
 ## Data Source
 
-- **GDP Data**: Banco Mundial — [World Bank GDP Indicator](https://data.worldbank.org/indicator/NY.GDP.PCAP.CD)
+- **GDP Data**: World Bank — [World Bank GDP Indicator](https://data.worldbank.org/indicator/NY.GDP.PCAP.CD)
 - **Geographic Data**: [geo-countries GeoJSON](https://github.com/datasets/geo-countries/)
 
 ## Setup
@@ -20,24 +20,24 @@ The project visualizes World Bank data on GDP per capita for 12 South American c
 ### Requirements
 
 - Python 3.8+
-- Dependencies listed in `requirements.txt`
+- Dependencies in `requirements.txt`
 
-### Installation
+### Install
 
-1. Clone the repository:
+1. repository:
    ```bash
    git clone https://github.com/jabernar/thirdsemester-dataproject.git
    cd thirdsemester-dataproject
    ```
 
-2. Install dependencies:
+2. dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
 ## Usage
 
-Run the script to generate all three visualizations:
+Run the script to generate visualizations
 
 ```bash
 python projetodevisualizacaojaime.py
