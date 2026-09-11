@@ -2,7 +2,7 @@
 
 This module has three visualizations of GDP per capita trends in South American countries from 2014 to 2024.
 
-Data Source: Banco Mundial — https://data.worldbank.org/indicator/NY.GDP.PCAP.CD
+Data Source: World Bank — https://data.worldbank.org/indicator/NY.GDP.PCAP.CD
 GeoJSON Source: https://github.com/datasets/geo-countries
 """
 
