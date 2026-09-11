@@ -1,7 +1,6 @@
-"""Visualização da Informação — PIB Per Capita América do Sul.
+"""Data Visualization — GDP Per Capita South America
 
-This module generates three visualizations of GDP per capita trends
-across South American countries from 2014 to 2024.
+This module has three visualizations of GDP per capita trends in South American countries from 2014 to 2024.
 
 Data Source: Banco Mundial — https://data.worldbank.org/indicator/NY.GDP.PCAP.CD
 GeoJSON Source: https://github.com/datasets/geo-countries
@@ -22,41 +21,32 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Data and file paths
 DATA_FILE = "dados_pib.csv"
 OUTPUT_DIR = "output"
 GEOJSON_PATH = Path(OUTPUT_DIR) / "countries.geojson"
 
-# Chart parameters
 CHART_DPI = 150
 CHART_FONT_SIZE = 11
 
-# GeoJSON source
 GEOJSON_URL = (
     "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
 )
 
-# Country metadata: ISO3 code → (Portuguese name, Hex color)
 COUNTRY_METADATA = {
-    "URY": ("Uruguai", "#8c564b"),
+    "URY": ("Uruguay", "#8c564b"),
     "CHL": ("Chile", "#ff7f0e"),
     "ARG": ("Argentina", "#2ca02c"),
-    "BRA": ("Brasil", "#1f77b4"),
+    "BRA": ("Brazil", "#1f77b4"),
     "GUY": ("Guiana", "#aec7e8"),
     "PER": ("Peru", "#9467bd"),
-    "COL": ("Colômbia", "#d62728"),
+    "COL": ("Colombia", "#d62728"),
     "SUR": ("Suriname", "#c5b0d5"),
     "ECU": ("Equador", "#ffbb78"),
-    "PRY": ("Paraguai", "#98df8a"),
+    "PRY": ("Paraguay", "#98df8a"),
     "VEN": ("Venezuela", "#ff9896"),
-    "BOL": ("Bolívia", "#c49c94"),
+    "BOL": ("Bolivia", "#c49c94"),
 }
 
-# Countries to highlight in map legend (those with time-series data)
 COUNTRIES_WITH_TIMESERIES = ["BRA", "CHL", "ARG", "COL", "PER", "URY"]
 
 # ============================================================================
@@ -70,21 +60,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
-
-
 def create_session_with_retries(max_retries=3, backoff_factor=0.5):
-    """Create a requests Session with automatic retry logic.
-
-    Args:
-        max_retries: Maximum number of retries for failed requests.
-        backoff_factor: Backoff factor for retries.
-
-    Returns:
-        requests.Session: Configured session with retry strategy.
-    """
     session = requests.Session()
     retry_strategy = Retry(
         total=max_retries,
@@ -99,15 +75,6 @@ def create_session_with_retries(max_retries=3, backoff_factor=0.5):
 
 
 def download_geojson(url, output_path):
-    """Download GeoJSON file with error handling.
-
-    Args:
-        url: URL to download from.
-        output_path: Path to save the file.
-
-    Raises:
-        Exception: If download fails after retries.
-    """
     try:
         logger.info(f"Downloading GeoJSON from {url}...")
         session = create_session_with_retries()
@@ -124,17 +91,6 @@ def download_geojson(url, output_path):
 
 
 def load_data(csv_file):
-    """Load GDP data from CSV file.
-
-    Args:
-        csv_file: Path to CSV file with countries in rows and years in columns.
-
-    Returns:
-        pd.DataFrame: DataFrame with GDP data.
-
-    Raises:
-        FileNotFoundError: If CSV file does not exist.
-    """
     if not os.path.exists(csv_file):
         raise FileNotFoundError(f"Data file not found: {csv_file}")
     logger.info(f"Loading data from {csv_file}...")
@@ -144,15 +100,6 @@ def load_data(csv_file):
 
 
 def prepare_timeseries_data(df):
-    """Prepare time-series data for line chart.
-
-    Args:
-        df: DataFrame with countries in rows and years in columns.
-
-    Returns:
-        dict: Dictionary mapping country names to lists of GDP values.
-        list: Sorted year values.
-    """
     years = sorted([int(col) for col in df.columns if col.isdigit()])
     timeseries = {}
     for _, row in df.iterrows():
@@ -163,30 +110,12 @@ def prepare_timeseries_data(df):
 
 
 def prepare_2024_data(df):
-    """Prepare 2024 GDP data.
-
-    Args:
-        df: DataFrame with country data (requires both country names and ISO3 codes).
-
-    Returns:
-        dict: Dictionary mapping country names to 2024 GDP values.
-    """
-    # Use the last year (2024) from the dataset
     year_columns = [col for col in df.columns if col.isdigit()]
     last_year_col = str(max(int(col) for col in year_columns))
     return df.set_index("Pais")[last_year_col].to_dict()
 
 
 def get_country_color(country_name):
-    """Get color for a country by name or ISO3 code.
-
-    Args:
-        country_name: Country name in Portuguese or ISO3 code.
-
-    Returns:
-        str: Hex color code.
-    """
-    # Try to find by ISO3 code first
     for iso3, (pt_name, color) in COUNTRY_METADATA.items():
         if country_name == pt_name or country_name == iso3:
             return color
@@ -194,19 +123,7 @@ def get_country_color(country_name):
     return "#808080"
 
 
-# ============================================================================
-# CHART GENERATION FUNCTIONS
-# ============================================================================
-
-
 def generate_line_chart(timeseries_data, years, output_file):
-    """Generate line chart of GDP per capita over time.
-
-    Args:
-        timeseries_data: Dictionary mapping country names to GDP values.
-        years: List of year values.
-        output_file: Path to save the chart.
-    """
     logger.info("Generating line chart...")
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -245,12 +162,6 @@ def generate_line_chart(timeseries_data, years, output_file):
 
 
 def generate_bar_chart(data_2024, output_file):
-    """Generate bar chart of GDP per capita in 2024.
-
-    Args:
-        data_2024: Dictionary mapping country names to 2024 GDP values.
-        output_file: Path to save the chart.
-    """
     logger.info("Generating bar chart...")
     # Sort countries by GDP value for better visualization
     sorted_data = dict(sorted(data_2024.items(), key=lambda x: x[1], reverse=True))
@@ -274,7 +185,6 @@ def generate_bar_chart(data_2024, output_file):
         mticker.FuncFormatter(lambda x, _: f"US$ {x:,.0f}")
     )
 
-    # Add value labels on top of bars
     for bar in bars:
         height = bar.get_height()
         ax.text(
@@ -296,14 +206,6 @@ def generate_bar_chart(data_2024, output_file):
 
 
 def generate_choropleth_map(output_file):
-    """Generate choropleth map of GDP per capita by country.
-
-    Args:
-        output_file: Path to save the map.
-
-    Raises:
-        Exception: If GeoJSON cannot be loaded.
-    """
     logger.info("Generating choropleth map...")
 
     # Ensure GeoJSON is available
@@ -316,24 +218,20 @@ def generate_choropleth_map(output_file):
         logger.error(f"Failed to read GeoJSON: {e}")
         raise
 
-    # Rename column and filter to South American countries
     gdf = gdf.rename(columns={"ISO3166-1-Alpha-3": "ISO3"})
     gdf = gdf[gdf["ISO3"].isin(list(COUNTRY_METADATA.keys()))].copy()
 
-    # Add GDP and metadata
     gdf["Nome"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][0])
     gdf["Cor"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][1])
     gdf = gdf.to_crs("EPSG:3857")
 
     fig, ax = plt.subplots(figsize=(10, 12))
 
-    # Plot each country
     for _, row in gdf.iterrows():
         gpd.GeoDataFrame([row], crs=gdf.crs).plot(
             ax=ax, color=row["Cor"], edgecolor="white", linewidth=1
         )
 
-    # Add country labels
     for _, row in gdf.iterrows():
         c = row.geometry.centroid
         ax.annotate(
@@ -346,7 +244,6 @@ def generate_choropleth_map(output_file):
             color="#111111",
         )
 
-    # Add legend for highlighted countries
     legend_patches = [
         mpatches.Patch(color=COUNTRY_METADATA[iso][1], label=COUNTRY_METADATA[iso][0])
         for iso in COUNTRIES_WITH_TIMESERIES
@@ -372,25 +269,15 @@ def generate_choropleth_map(output_file):
     logger.info(f"Choropleth map saved to {output_file}")
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
-
-
 def main():
-    """Main execution function."""
     try:
-        # Create output directory
         Path(OUTPUT_DIR).mkdir(exist_ok=True)
 
-        # Load data
         df = load_data(DATA_FILE)
 
-        # Prepare data
         timeseries_data, years = prepare_timeseries_data(df)
         data_2024 = prepare_2024_data(df)
 
-        # Generate charts
         generate_line_chart(timeseries_data, years, Path(OUTPUT_DIR) / "grafico1_linha.png")
         generate_bar_chart(data_2024, Path(OUTPUT_DIR) / "grafico2_barras.png")
         generate_choropleth_map(Path(OUTPUT_DIR) / "grafico3_coropleto.png")
