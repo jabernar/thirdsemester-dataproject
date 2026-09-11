@@ -9,6 +9,7 @@ GeoJSON Source: https://github.com/datasets/geo-countries
 import os
 import sys
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -27,31 +28,38 @@ GEOJSON_PATH = Path(OUTPUT_DIR) / "countries.geojson"
 
 CHART_DPI = 150
 CHART_FONT_SIZE = 11
+DEFAULT_COLOR = "#808080"
 
 GEOJSON_URL = (
     "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
 )
 
+
+@dataclass(frozen=True)
+class CountryInfo:
+    name: str
+    color: str
+
+
 COUNTRY_METADATA = {
-    "URY": ("Uruguay", "#8c564b"),
-    "CHL": ("Chile", "#ff7f0e"),
-    "ARG": ("Argentina", "#2ca02c"),
-    "BRA": ("Brazil", "#1f77b4"),
-    "GUY": ("Guiana", "#aec7e8"),
-    "PER": ("Peru", "#9467bd"),
-    "COL": ("Colombia", "#d62728"),
-    "SUR": ("Suriname", "#c5b0d5"),
-    "ECU": ("Equador", "#ffbb78"),
-    "PRY": ("Paraguay", "#98df8a"),
-    "VEN": ("Venezuela", "#ff9896"),
-    "BOL": ("Bolivia", "#c49c94"),
+    "URY": CountryInfo("Uruguay", "#8c564b"),
+    "CHL": CountryInfo("Chile", "#ff7f0e"),
+    "ARG": CountryInfo("Argentina", "#2ca02c"),
+    "BRA": CountryInfo("Brazil", "#1f77b4"),
+    "GUY": CountryInfo("Guyana", "#aec7e8"),
+    "PER": CountryInfo("Peru", "#9467bd"),
+    "COL": CountryInfo("Colombia", "#d62728"),
+    "SUR": CountryInfo("Suriname", "#c5b0d5"),
+    "ECU": CountryInfo("Ecuador", "#ffbb78"),
+    "PRY": CountryInfo("Paraguay", "#98df8a"),
+    "VEN": CountryInfo("Venezuela", "#ff9896"),
+    "BOL": CountryInfo("Bolivia", "#c49c94"),
 }
+
+COUNTRY_COLOR_BY_NAME = {info.name: info.color for info in COUNTRY_METADATA.values()}
 
 COUNTRIES_WITH_TIMESERIES = ["BRA", "CHL", "ARG", "COL", "PER", "URY"]
 
-# ============================================================================
-# LOGGING SETUP
-# ============================================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,28 +107,37 @@ def load_data(csv_file):
     return df
 
 
+def get_year_columns(df):
+    return sorted((col for col in df.columns if col.isdigit()), key=int)
+
+
+def validate_countries(df):
+    known_names = set(COUNTRY_COLOR_BY_NAME.keys())
+    unknown = set(df["Pais"]) - known_names
+    if unknown:
+        logger.warning(
+            f"Countries not found in COUNTRY_METADATA (will use default color): "
+            f"{sorted(unknown)}"
+        )
+
+
 def prepare_timeseries_data(df):
-    years = sorted([int(col) for col in df.columns if col.isdigit()])
+    years = get_year_columns(df)
     timeseries = {}
     for _, row in df.iterrows():
         pais = row["Pais"]
         valores = [row[year] for year in years]
         timeseries[pais] = valores
-    return timeseries, years
+    return timeseries, [int(year) for year in years]
 
 
 def prepare_2024_data(df):
-    year_columns = [col for col in df.columns if col.isdigit()]
-    last_year_col = str(max(int(col) for col in year_columns))
+    last_year_col = get_year_columns(df)[-1]
     return df.set_index("Pais")[last_year_col].to_dict()
 
 
 def get_country_color(country_name):
-    for iso3, (pt_name, color) in COUNTRY_METADATA.items():
-        if country_name == pt_name or country_name == iso3:
-            return color
-    # Default color if not found
-    return "#808080"
+    return COUNTRY_COLOR_BY_NAME.get(country_name, DEFAULT_COLOR)
 
 
 def generate_line_chart(timeseries_data, years, output_file):
@@ -221,8 +238,8 @@ def generate_choropleth_map(output_file):
     gdf = gdf.rename(columns={"ISO3166-1-Alpha-3": "ISO3"})
     gdf = gdf[gdf["ISO3"].isin(list(COUNTRY_METADATA.keys()))].copy()
 
-    gdf["Nome"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][0])
-    gdf["Cor"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x][1])
+    gdf["Nome"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x].name)
+    gdf["Cor"] = gdf["ISO3"].map(lambda x: COUNTRY_METADATA[x].color)
     gdf = gdf.to_crs("EPSG:3857")
 
     fig, ax = plt.subplots(figsize=(10, 12))
@@ -245,7 +262,7 @@ def generate_choropleth_map(output_file):
         )
 
     legend_patches = [
-        mpatches.Patch(color=COUNTRY_METADATA[iso][1], label=COUNTRY_METADATA[iso][0])
+        mpatches.Patch(color=COUNTRY_METADATA[iso].color, label=COUNTRY_METADATA[iso].name)
         for iso in COUNTRIES_WITH_TIMESERIES
     ]
     ax.legend(
@@ -274,6 +291,7 @@ def main():
         Path(OUTPUT_DIR).mkdir(exist_ok=True)
 
         df = load_data(DATA_FILE)
+        validate_countries(df)
 
         timeseries_data, years = prepare_timeseries_data(df)
         data_2024 = prepare_2024_data(df)
